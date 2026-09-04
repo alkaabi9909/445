@@ -1,0 +1,532 @@
+version: "2"
+type: backend
+tech_stack:
+  - Java 21
+  - Spring Boot 3.3.4
+  - Spring Security (session-based, no JWT)
+  - Spring Data JPA / Hibernate 6.5
+  - H2 (dev profile, file-backed) / SQL Server (mssql profile)
+  - Flyway (mssql profile only)
+  - Apache POI (xlsx export)
+  - Maven
+  - Vanilla JS single-page frontend served from /static
+features:
+  - name: Authentication and Session Management
+    description: >
+      Session-cookie authentication. Clients MUST POST /api/auth/login first and reuse the
+      returned JSESSIONID cookie on every subsequent request. There is no JWT and no
+      Authorization header. Seeded credentials - admin/Qanoon@123 (full permissions),
+      lawyer1, lawyer2, consult1, consult2, senior1, secretary1 all with password Qanoon@123.
+      All rejections return JSON {"error":"<arabic>","blockers":[]} and never redirect to a
+      login page. Unauthenticated API access returns 401, missing permission returns 403.
+    files:
+      - src/main/java/com/qanoon/web/AuthController.java
+      - src/main/java/com/qanoon/security/SecurityConfig.java
+      - src/main/java/com/qanoon/security/LoginAttemptService.java
+      - src/main/java/com/qanoon/security/PasswordPolicy.java
+    endpoints:
+      - method: POST
+        path: /api/auth/login
+        description: Log in and receive a session cookie. Wrong password returns 4xx.
+        auth_required: false
+        request_schema:
+          body:
+            username: string
+            password: string
+        response_schema:
+          "200": "{ user, permissions[] } - NOTE there is no settings key on login; settings is returned only by GET /api/auth/me"
+          "401": Invalid credentials or locked account
+      - method: GET
+        path: /api/auth/me
+        description: Current user, permission codes, and office settings.
+        auth_required: true
+        response_schema:
+          "200": "{ user, permissions[], settings }"
+          "401": Not logged in
+      - method: POST
+        path: /api/auth/logout
+        description: Invalidate the session. Subsequent calls with the cookie return 401.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, message }"
+      - method: POST
+        path: /api/auth/change-password
+        description: >
+          Change own password. Enforces min 8 chars, one uppercase, one lowercase, one digit,
+          one special character, no spaces, and must differ from the current password.
+        auth_required: true
+        request_schema:
+          body:
+            oldPassword: string
+            newPassword: string
+        response_schema:
+          "200": "{ ok, message }"
+          "400": Policy violation or wrong current password
+    depends_on: []
+
+  - name: Dashboard and Lookups
+    description: Aggregate workload/financial widgets and dropdown reference data.
+    files:
+      - src/main/java/com/qanoon/web/DashboardController.java
+      - src/main/java/com/qanoon/web/LookupController.java
+    endpoints:
+      - method: GET
+        path: /api/dashboard
+        description: Workload array and financial totals for the current user.
+        auth_required: true
+        response_schema:
+          "200": "{ workload[], financials }"
+      - method: GET
+        path: /api/dashboard/urgent
+        description: Urgent items (hearings, appeal deadlines, installments).
+        auth_required: true
+        response_schema:
+          "200": UrgentItem[]
+      - method: GET
+        path: /api/lookups
+        description: All enum options as {value,label} plus lawyers, consultants, clients, debtors.
+        auth_required: true
+        response_schema:
+          "200": "Map of option lists"
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Legal Cases and Transfer Gate
+    description: >
+      Case lifecycle plus the six-condition gate that governs transferring a case to
+      enforcement. The gate is re-evaluated server-side on every transfer attempt and the
+      server never trusts the client. Transferring twice must fail with 400.
+    files:
+      - src/main/java/com/qanoon/web/CaseController.java
+      - src/main/java/com/qanoon/service/CaseService.java
+    endpoints:
+      - method: GET
+        path: /api/cases
+        description: >
+          Paged case list. Optional status filter is case-insensitive; an unknown status
+          returns 400. Returns { items, total, page, size }.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "400": Unknown status value
+      - method: GET
+        path: /api/cases/{id}
+        description: Case detail with hearings, appeals, attachments and transfer check.
+        auth_required: true
+        response_schema:
+          "200": CaseDetail
+          "404": Not found
+      - method: POST
+        path: /api/cases
+        description: >
+          Create a case with an auto-generated case number. REQUIRED fields are clientId
+          (must reference a party whose kind is CLIENT), opponentId (must reference a party
+          whose kind is DEBTOR) and a non-blank subject. Omitting clientId returns 400
+          "must choose the client"; omitting subject returns 400 "case subject is required".
+          Obtain valid ids from GET /api/lookups which returns clients[] and debtors[].
+        auth_required: true
+        request_schema:
+          body:
+            clientId: number
+            opponentId: number
+            subject: string
+            court: string
+            caseType: string
+            claimAmount: number
+        response_schema:
+          "200": "{ ok, message, data:{ case:{ id, caseNumber, ... }, hearings, appeals, communications, attachments, transferCheck } } - the new id is at data.case.id, NOT data.id"
+          "400": Missing clientId, opponentId or subject
+      - method: GET
+        path: /api/cases/{id}/transfer-check
+        description: Returns { allowed, checks[] } listing every blocking condition in Arabic.
+        auth_required: true
+        response_schema:
+          "200": TransferCheck
+      - method: POST
+        path: /api/cases/{id}/transfer
+        description: Transfer to enforcement. Rejected with 400 when the gate is not satisfied.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data.executionNumber }"
+          "400": Gate not satisfied or already transferred
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Enforcement Files
+    description: >
+      Enforcement files created from transferred cases, execution orders, payments, and the
+      satisfaction gate. A file may not be satisfied while a remaining balance is greater
+      than zero.
+    files:
+      - src/main/java/com/qanoon/web/ExecutionController.java
+      - src/main/java/com/qanoon/service/ExecutionService.java
+    endpoints:
+      - method: GET
+        path: /api/executions
+        description: Paged enforcement file list; status filter is case-insensitive.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "400": Unknown status value
+      - method: POST
+        path: /api/executions/{id}/orders
+        description: >
+          Add an execution order. orderType is REQUIRED and matched case-sensitively against
+          BANK_FREEZE, TRAVEL_BAN, ARREST, PROPERTY_SEIZURE, SALARY_SEIZURE.
+        auth_required: true
+        request_schema:
+          body:
+            orderType: string
+            orderNumber: string
+            issuedDate: date
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing or unknown orderType
+      - method: POST
+        path: /api/executions/{id}/payments
+        description: >
+          Record a payment. method is REQUIRED and case-sensitive - CASH, CHEQUE, CARD, TRANSFER.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing or unknown method
+      - method: GET
+        path: /api/executions/{id}/satisfaction-check
+        description: Returns { allowed, ... }; false while a balance remains.
+        auth_required: true
+        response_schema:
+          "200": SatisfactionCheck
+      - method: POST
+        path: /api/executions/{id}/satisfy
+        description: Close as satisfied. 400 while any balance remains.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Balance remaining
+    depends_on:
+      - Legal Cases and Transfer Gate
+
+  - name: Legal Consultations
+    description: >
+      Consultation lifecycle RECEIVED, STUDYING, UNDER_REVIEW, RETURNED, APPROVED, SIGNED,
+      SENT, ARCHIVED. Two binding rules - an author may never review their own opinion, and a
+      signed opinion is locked against edits even for a manager; corrections require a new
+      consultation via the correction endpoint.
+    files:
+      - src/main/java/com/qanoon/web/ConsultationController.java
+      - src/main/java/com/qanoon/service/ConsultationService.java
+    endpoints:
+      - method: GET
+        path: /api/consultations
+        description: Paged list; status filter case-insensitive, unknown value returns 400.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "400": Unknown status
+      - method: POST
+        path: /api/consultations
+        description: >
+          Create a consultation. priority is optional and defaults to NORMAL, but when sent it
+          is case-sensitive - LOW, NORMAL, HIGH, URGENT.
+        auth_required: true
+        request_schema:
+          body:
+            clientId: number
+            subject: string
+            requestText: string
+            priority: string
+        response_schema:
+          "200": "{ ok, message, data:{ consultation:{ id, consultationNumber, priority, ... }, actions[], attachments[] } } - the new id is at data.consultation.id, NOT data.id"
+          "400": Validation error or unknown priority
+      - method: POST
+        path: /api/consultations/{id}/opinion
+        description: Save opinion text. Returns 400 if the consultation is signed and locked.
+        auth_required: true
+        response_schema:
+          "200": "{ ok }"
+          "400": Locked after signing
+      - method: POST
+        path: /api/consultations/{id}/review
+        description: Review an opinion. The opinion author must be rejected with 4xx.
+        auth_required: true
+        response_schema:
+          "200": "{ ok }"
+          "403": Author reviewing own opinion
+      - method: GET
+        path: /api/consultations/suggest
+        description: Ranked assignment candidates, scores descending, each with a text reason.
+        auth_required: true
+        response_schema:
+          "200": CandidateView[]
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Financial Files and Payments
+    description: >
+      Debt collection files, communications, installment plans, payments, and the five closure
+      types. Payments are created pending and must be confirmed separately.
+    files:
+      - src/main/java/com/qanoon/web/FinancialController.java
+      - src/main/java/com/qanoon/web/PaymentController.java
+      - src/main/java/com/qanoon/service/FinancialService.java
+      - src/main/java/com/qanoon/service/PaymentService.java
+    endpoints:
+      - method: GET
+        path: /api/financial
+        description: Paged list; status filter case-insensitive, unknown value returns 400.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "400": Unknown status
+      - method: POST
+        path: /api/financial/{id}/payments
+        description: >
+          Record a payment. method is REQUIRED and case-sensitive - CASH, CHEQUE, CARD,
+          TRANSFER. Lowercase such as cash must be rejected with 400.
+        auth_required: true
+        request_schema:
+          body:
+            amount: number
+            paymentDate: date
+            method: string
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing or unknown method
+      - method: POST
+        path: /api/financial/{id}/communications
+        description: >
+          Log a communication. type is REQUIRED and case-sensitive; summary is required.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing type or summary
+      - method: POST
+        path: /api/financial/{id}/close
+        description: >
+          Close the file. closureType is REQUIRED and case-sensitive - FULL_PAYMENT,
+          INSTALLMENT, LEGAL_OPINION, EXEMPTION, ESCALATION.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing or unknown closureType
+      - method: POST
+        path: /api/payments/{id}/confirm
+        description: Confirm a pending payment, updating the collected total.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Parties Directory
+    description: >
+      Clients and debtors. Deletion never removes a row; it deactivates the party to preserve
+      referential history.
+    files:
+      - src/main/java/com/qanoon/web/PartyController.java
+    endpoints:
+      - method: GET
+        path: /api/parties
+        description: >
+          List parties sorted by name. Optional kind filter accepts CLIENT or DEBTOR
+          case-insensitively; an unknown kind returns 400.
+        auth_required: true
+        response_schema:
+          "200": Party[]
+          "400": Unknown kind
+      - method: POST
+        path: /api/parties
+        description: Create a party. name and kind are both required. Requires CLIENTS_MANAGE.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing name or kind
+          "403": Lacks CLIENTS_MANAGE
+      - method: DELETE
+        path: /api/parties/{id}
+        description: Deactivate rather than delete; the record remains retrievable.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, message }"
+          "404": Not found
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Users, Roles and Settings
+    description: >
+      Administration screens gated on USERS_MANAGE and SETTINGS_MANAGE. System roles cannot be
+      edited or deleted, and a role still linked to users cannot be deleted.
+    files:
+      - src/main/java/com/qanoon/web/UserController.java
+      - src/main/java/com/qanoon/web/RoleController.java
+      - src/main/java/com/qanoon/web/SettingsController.java
+    endpoints:
+      - method: GET
+        path: /api/users
+        description: List users. Response must never contain a password hash.
+        auth_required: true
+        response_schema:
+          "200": User[]
+          "403": Lacks USERS_MANAGE
+      - method: POST
+        path: /api/users
+        description: >
+          Create a user. username, fullName, roleId and a policy-compliant password are
+          required; a duplicate username is rejected and an unknown roleId returns 404.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Validation error
+          "404": Unknown roleId
+      - method: GET
+        path: /api/roles/permissions
+        description: All permission codes with Arabic labels.
+        auth_required: true
+        response_schema:
+          "200": PermissionOption[]
+      - method: POST
+        path: /api/roles
+        description: >
+          Create a role. Unknown permission codes are silently filtered out; a role whose
+          permissions are all unknown is rejected with 400.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, data }"
+          "400": Missing code/name or no valid permission
+      - method: DELETE
+        path: /api/roles/{id}
+        description: Delete a custom role. System roles and roles in use return 400.
+        auth_required: true
+        response_schema:
+          "200": "{ ok }"
+          "400": System role or role in use
+      - method: GET
+        path: /api/settings
+        description: Office settings. Requires SETTINGS_MANAGE.
+        auth_required: true
+        response_schema:
+          "200": SystemSetting[]
+          "403": Lacks SETTINGS_MANAGE
+      - method: PUT
+        path: /api/settings
+        description: Save settings from a flat key/value map.
+        auth_required: true
+        response_schema:
+          "200": "{ ok, message }"
+          "403": Lacks SETTINGS_MANAGE
+    depends_on:
+      - Authentication and Session Management
+
+  - name: Reports, Audit, Archive and Notifications
+    description: >
+      Reporting with xlsx export, the activity log, the searchable archive, law codes, and
+      per-user notifications.
+    files:
+      - src/main/java/com/qanoon/web/ReportController.java
+      - src/main/java/com/qanoon/web/AuditController.java
+      - src/main/java/com/qanoon/web/ArchiveController.java
+      - src/main/java/com/qanoon/web/LawController.java
+      - src/main/java/com/qanoon/web/NotificationController.java
+      - src/main/java/com/qanoon/web/BackupController.java
+    endpoints:
+      - method: GET
+        path: /api/reports/{kind}
+        description: >
+          Build a report. kind is one of financial, cases, consultants, team; any other value
+          returns 400. Requires REPORTS_VIEW. Every row must match the header column count.
+        auth_required: true
+        response_schema:
+          "200": "{ title, headers[], rows[], chart, totals }"
+          "400": Unknown report kind
+          "403": Lacks REPORTS_VIEW
+      - method: GET
+        path: /api/reports/{kind}/export
+        description: Export the report as xlsx; the body starts with the PK zip signature.
+        auth_required: true
+        response_schema:
+          "200": binary xlsx
+      - method: GET
+        path: /api/audit
+        description: Paged activity log with username/action/date filters. Requires AUDIT_VIEW.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "403": Lacks AUDIT_VIEW
+      - method: GET
+        path: /api/archive
+        description: >
+          Paged archive search. Optional type filter is case-insensitive; an unknown type
+          returns 400.
+        auth_required: true
+        response_schema:
+          "200": PageResult
+          "400": Unknown type
+      - method: GET
+        path: /api/notifications/count
+        description: Unread notification count for the current user.
+        auth_required: true
+        response_schema:
+          "200": "{ unread }"
+      - method: POST
+        path: /api/notifications/{id}/read
+        description: >
+          Mark one notification read. Scoped to the current user, so an unknown id returns 200
+          rather than 404 by design, to avoid leaking other users' notification ids.
+        auth_required: true
+        response_schema:
+          "200": "{ ok }"
+      - method: GET
+        path: /api/backup
+        description: List backups. Requires BACKUP_RUN.
+        auth_required: true
+        response_schema:
+          "200": BackupResult[]
+          "403": Lacks BACKUP_RUN
+    depends_on:
+      - Authentication and Session Management
+
+known_limitations:
+  - issue: >
+      Write endpoints return the unified envelope {ok, message, data}, but data is usually a
+      detail object rather than the created entity. The new id is nested - data.case.id for
+      cases, data.consultation.id for consultations. Only a few endpoints put id directly on
+      data.
+    location: src/main/java/com/qanoon/common/ApiResponse.java
+    impact: >
+      Asserting data.id directly will fail even though creation succeeded. Always read the id
+      from the nested entity named after the resource.
+  - issue: >
+      Account lockout after 5 failed logins locks the account for 15 minutes. Tests that probe
+      invalid credentials against a seeded account will lock it and cause later tests using the
+      same account to fail.
+    location: src/main/java/com/qanoon/security/LoginAttemptService.java
+    impact: >
+      Negative-path login tests must use a throwaway account, never admin or another account
+      reused by other tests.
+  - issue: >
+      Only 2 concurrent sessions are allowed per user; a third login silently expires the
+      oldest session.
+    location: src/main/java/com/qanoon/security/SecurityConfig.java
+    impact: >
+      Tests that log in repeatedly as the same user can have earlier sessions invalidated
+      mid-run, producing confusing 401s.
+  - issue: >
+      Enum handling is deliberately asymmetric - read filters accept any letter case while
+      state-changing write paths require the exact uppercase code.
+    location: src/main/java/com/qanoon/common/EnumParser.java
+    impact: >
+      A payload of "cash" is correctly rejected with 400 on payment endpoints while
+      ?status=open is correctly accepted on list endpoints. Both behaviours are intended and
+      should not be reported as defects.
+  - issue: All API responses and error messages are Arabic.
+    location: src/main/java/com/qanoon/common/GlobalExceptionHandler.java
+    impact: >
+      Assertions must target HTTP status codes and JSON structure rather than English message
+      text.
+  - issue: >
+      The dev profile uses a file-backed H2 database, so tests that create, close or transfer
+      records mutate persistent state shared across runs.
+    location: src/main/resources/application.yml
+    impact: >
+      Repeated runs are not idempotent; a case transferred in one run cannot be transferred
+      again in the next.

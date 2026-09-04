@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "postapiauthloginwithvalidandinvalidcredentials",
+    "description": "Test POST /api/auth/login with valid credentials to receive 200 with user data and session cookie; test with invalid credentials to receive 401 with Arabic error JSON and no redirect."
+  },
+  {
+    "id": "TC002",
+    "title": "getapidashboardwithandwithoutsessioncookie",
+    "description": "Test GET /api/dashboard with valid session cookie to receive 200 with workload and financial totals; test without session cookie to receive 401 with Arabic error JSON."
+  },
+  {
+    "id": "TC003",
+    "title": "getapicaseswithvalidstatusandinvalidstatusfilter",
+    "description": "Test GET /api/cases with valid session cookie and valid status filter to receive 200 with paged case list; test with unknown status filter to receive 400 error."
+  },
+  {
+    "id": "TC004",
+    "title": "postapiexecutionsidorderswithvalidandinvalidordertypes",
+    "description": "Test POST /api/executions/{id}/orders with valid orderType to receive 200 with created order data; test with missing or unknown orderType to receive 400 error."
+  },
+  {
+    "id": "TC005",
+    "title": "postapiconsultationswithvalidandinvalidpriority",
+    "description": "Test POST /api/consultations with valid priority values to receive 200 with created consultation data; test with invalid or unknown priority to receive 400 validation error."
+  },
+  {
+    "id": "TC006",
+    "title": "postapifinancialidpaymentswithvalidandinvalidmethods",
+    "description": "Test POST /api/financial/{id}/payments with valid case-sensitive payment methods to receive 200 with pending payment data; test with lowercase or unknown methods to receive 400 error."
+  },
+  {
+    "id": "TC007",
+    "title": "postapipartieswithandwithoutclientsmanagepermission",
+    "description": "Test POST /api/parties with CLIENTS_MANAGE permission and valid data to receive 200 with created party data; test without CLIENTS_MANAGE permission to receive 403 error."
+  },
+  {
+    "id": "TC008",
+    "title": "postapiuserswithvalidandinvalidroleidandduplicateusername",
+    "description": "Test POST /api/users with valid roleId and unique username to receive 200 with created user data; test with unknown roleId to receive 404 error; test with duplicate username to receive 400 validation error."
+  },
+  {
+    "id": "TC009",
+    "title": "getapireportskindwithvalidandunknownkind",
+    "description": "Test GET /api/reports/{kind} with valid kinds (financial, cases, consultants, team) to receive 200 with report data; test with unknown kind to receive 400 error."
+  },
+  {
+    "id": "TC010",
+    "title": "postapiauthchangepasswordwithvalidandinvalidpasswords",
+    "description": "Test POST /api/auth/change-password with oldPassword and newPassword that meets policy to receive 200 confirmation; test with newPassword violating policy or wrong oldPassword to receive 400 error with Arabic message."
+  }
+]

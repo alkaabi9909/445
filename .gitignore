@@ -1,0 +1,26 @@
+# ===== بناء Maven =====
+target/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ===== قاعدة بيانات التطوير والنسخ الاحتياطية =====
+# قاعدة H2 المحلية تُولَّد ذاتياً عند أول تشغيل عبر DataSeeder
+data/
+data.bak-*/
+
+# ===== أدوات محلية وإعدادات المحرر =====
+.claude/
+.claude-flow/
+.idea/
+.vscode/
+*.iml
+
+# ===== مخرجات تشغيل TestSprite المحلية =====
+# سجل التشغيل ضخم ومحلي، وconfig.json يحمل مفتاح المشروع ومسارات الجهاز
+testsprite_tests/tmp/mcp.log
+testsprite_tests/tmp/config.json
+
+# ===== ملفات نظام التشغيل =====
+Thumbs.db
+Desktop.ini
+.DS_Store

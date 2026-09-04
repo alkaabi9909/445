@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظام قانون — إدارة مكاتب المحاماة</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ===================== شاشة الدخول ===================== -->
+<div id="login-screen" class="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-logo">ق</div>
+      <h1>نظام قانون</h1>
+      <p class="login-sub">النظام المتكامل لإدارة مكاتب المحاماة والاستشارات القانونية</p>
+    </div>
+
+    <form id="login-form" autocomplete="on">
+      <label class="fld">
+        <span>اسم المستخدم</span>
+        <input type="text" id="login-username" required autocomplete="username" autofocus>
+      </label>
+      <label class="fld">
+        <span>كلمة المرور</span>
+        <input type="password" id="login-password" required autocomplete="current-password">
+      </label>
+      <div id="login-error" class="login-error" hidden></div>
+      <button type="submit" class="btn btn-gold btn-block" id="login-btn">دخول</button>
+    </form>
+
+    <div class="login-hint">
+      <strong>بيانات الدخول التجريبية</strong>
+      <span>المستخدم: <code>admin</code> — كلمة المرور: <code>Qanoon@123</code></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== هيكل التطبيق ===================== -->
+<div id="app-shell" class="app-shell" hidden>
+
+  <header class="topbar">
+    <button class="nav-toggle" id="nav-toggle" aria-label="القائمة">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+    <div class="topbar-brand">
+      <span class="topbar-logo">ق</span>
+      <span id="office-name">نظام قانون</span>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="notif">
+        <button class="icon-btn" id="notif-btn" aria-label="التنبيهات">
+          <span class="material-symbols-outlined">notifications</span>
+          <span class="notif-badge" id="notif-count" hidden>0</span>
+        </button>
+        <div class="notif-panel" id="notif-panel" hidden>
+          <div class="notif-head">
+            <strong>التنبيهات</strong>
+            <button class="link-btn" id="notif-read-all">تعليم الكل كمقروء</button>
+          </div>
+          <div class="notif-list" id="notif-list"></div>
+        </div>
+      </div>
+
+      <div class="usermenu">
+        <button class="user-btn" id="user-btn">
+          <span class="user-avatar" id="user-initial">م</span>
+          <span class="user-meta">
+            <span class="user-name" id="user-name">—</span>
+            <span class="user-role" id="user-role">—</span>
+          </span>
+          <span class="caret"><span class="material-symbols-outlined" style="font-size:16px">expand_more</span></span>
+        </button>
+        <div class="user-panel" id="user-panel" hidden>
+          <button class="user-item" id="btn-change-password">تغيير كلمة المرور</button>
+          <button class="user-item danger" id="btn-logout">تسجيل الخروج</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="body-wrap">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+
+<!-- ===================== النوافذ والتنبيهات ===================== -->
+<div id="modal-root" class="modal-root" hidden>
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal" id="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">—</h3>
+      <button class="icon-btn" id="modal-close" aria-label="إغلاق">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>
+</div>
+
+<div id="toast-root" class="toast-root"></div>
+
+<script src="js/core.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/financial.js"></script>
+<script src="js/cases.js"></script>
+<script src="js/execution.js"></script>
+<script src="js/consultations.js"></script>
+<script src="js/archive.js"></script>
+<script src="js/laws.js"></script>
+<script src="js/admin.js"></script>
+<script>App.start();</script>
+</body>
+</html>
